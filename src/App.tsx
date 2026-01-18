@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react'
+import { type PointerEvent, useMemo, useState } from 'react'
 import { ArrowLeft, ArrowRight, RotateCcw, Sparkles } from 'lucide-react'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 
 import neonCityBanner from './assets/neon-city-banner.jpg'
+import { scenesImages } from '@/assets/scenesImages'
 import './App.css'
 import {
   Card,
@@ -2169,6 +2171,11 @@ function App() {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [choices, setChoices] = useState<(SceneOption | null)[]>([])
   const [showResult, setShowResult] = useState(false)
+  const [hoveredScenarioId, setHoveredScenarioId] = useState<ScenarioId>('A')
+  const [backgroundParallax, setBackgroundParallax] = useState({ x: 0, y: 0 })
+
+  const prefersReducedMotion = useReducedMotion()
+  const disableMotion = prefersReducedMotion
 
   const activeScenario = useMemo(
     () => scenarios.find((s) => s.id === selectedScenarioId) ?? null,
@@ -2193,6 +2200,19 @@ function App() {
   const currentScene =
     activeScenario && activeScenario.scenes[currentIndex]
   const currentChoice = currentScene && choices[currentIndex]
+
+  const currentSceneImage = useMemo(() => {
+    if (!activeScenario || !currentScene) return null
+    const imagesForScenario = scenesImages[activeScenario.id]
+    if (!imagesForScenario || imagesForScenario.length === 0) return null
+    const index = (currentScene.id - 1) % imagesForScenario.length
+    return imagesForScenario[index]
+  }, [activeScenario, currentScene])
+
+  const currentSceneImageAlt = useMemo(() => {
+    if (!activeScenario || !currentScene) return '当前场景插画'
+    return `${activeScenario.title} · ${currentScene.title}`
+  }, [activeScenario, currentScene])
 
   const isLastScene =
     activeScenario && totalScenes > 0
@@ -2247,6 +2267,7 @@ function App() {
     setChoices([])
     setCurrentIndex(0)
     setShowResult(false)
+    setHoveredScenarioId('A')
   }
 
   const mbtiResult = useMemo(
@@ -2295,20 +2316,94 @@ function App() {
     ? '每套故事都由 20 幕连续情境组成，你在每一幕的二选一，将被映射到四个人格维度，最终在结局生成一张属于此场景的性格档案。'
     : '从城市到深空、从沙漠到雪山，4 套各有风格的 20 幕故事等你选择。每一次抉择都只记录你最终停留的选项，用轻量方式勾勒出你的应对偏好。'
 
-  return (
-    <div className='min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-zinc-50 antialiased'>
-      {/* 顶部霓虹城市 Hero 区域 */}
-      <div className='relative overflow-hidden border-b border-zinc-800/60 bg-gradient-to-b from-violet-500/20 via-cyan-500/10 to-slate-950'>
-        <div className='pointer-events-none absolute inset-0 opacity-50'>
-          <img
-            src={neonCityBanner}
-            alt='赛博风格的城市夜景'
-            className='h-full w-full object-cover'
-          />
-          <div className='absolute inset-0 bg-gradient-to-b from-slate-950/80 via-slate-950/80 to-slate-950' />
-        </div>
+  const heroBackgroundImage = useMemo(() => {
+    if (activeScenario) {
+      const imagesForScenario = scenesImages[activeScenario.id]
+      if (imagesForScenario && imagesForScenario.length > 0) {
+        if (imagesForScenario.length > 1 && totalScenes > 0) {
+          const segmentSize = Math.max(
+            Math.floor(totalScenes / imagesForScenario.length),
+            1,
+          )
+          const imageIndex = Math.min(
+            imagesForScenario.length - 1,
+            Math.floor(currentIndex / segmentSize),
+          )
+          return imagesForScenario[imageIndex]
+        }
+        return imagesForScenario[0]
+      }
+    }
 
-        <header className='relative z-10 px-4 py-8 sm:px-6 lg:px-10'>
+    const fallbackImages = scenesImages[hoveredScenarioId]
+    if (fallbackImages && fallbackImages.length > 0) {
+      return fallbackImages[0]
+    }
+
+    return neonCityBanner
+  }, [activeScenario, currentIndex, hoveredScenarioId, totalScenes])
+
+  const handleBackgroundPointerMove = (
+    event: PointerEvent<HTMLDivElement>,
+  ) => {
+    if (disableMotion) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    const x = (event.clientX - rect.left) / rect.width - 0.5
+    const y = (event.clientY - rect.top) / rect.height - 0.5
+    const maxOffset = 16
+    setBackgroundParallax({
+      x: x * maxOffset,
+      y: y * maxOffset,
+    })
+  }
+
+  const handleBackgroundPointerLeave = () => {
+    setBackgroundParallax({ x: 0, y: 0 })
+  }
+
+  return (
+    <div
+      className='relative min-h-screen bg-slate-950 text-zinc-50 antialiased'
+      onPointerMove={handleBackgroundPointerMove}
+      onPointerLeave={handleBackgroundPointerLeave}
+    >
+      <div className='pointer-events-none fixed inset-0 -z-10'>
+        <AnimatePresence mode='wait'>
+          <motion.div
+            key={heroBackgroundImage}
+            initial={
+              disableMotion ? { opacity: 0 } : { opacity: 0, scale: 1.05 }
+            }
+            animate={
+              disableMotion
+                ? { opacity: 1, scale: 1 }
+                : { opacity: 1, scale: 1.15 }
+            }
+            exit={{ opacity: 0 }}
+            transition={
+              disableMotion
+                ? { duration: 0.5, ease: 'easeOut' }
+                : { duration: 12, ease: 'easeInOut' }
+            }
+            style={
+              disableMotion
+                ? undefined
+                : { x: backgroundParallax.x, y: backgroundParallax.y }
+            }
+            className='absolute inset-0'
+          >
+            <div
+              className='absolute inset-0 bg-cover bg-center'
+              style={{ backgroundImage: `url(${heroBackgroundImage})` }}
+            />
+            <div className='absolute inset-0 bg-gradient-to-b from-slate-950/70 via-slate-950/80 to-slate-950' />
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
+      {/* 顶部霓虹城市 Hero 区域 */}
+      <div className='relative z-10 border-b border-zinc-800/60 bg-slate-950/70 backdrop-blur-xl'>
+        <header className='px-4 py-8 sm:px-6 lg:px-10'>
           <div className='mx-auto flex max-w-6xl flex-col gap-6 sm:flex-row sm:items-center sm:justify-between'>
             <div className='space-y-4'>
               <div className='inline-flex items-center gap-2 rounded-full border border-fuchsia-500/40 bg-black/40 px-3 py-1 text-xs text-fuchsia-100 backdrop-blur'>
@@ -2391,29 +2486,51 @@ function App() {
               </CardHeader>
               <CardContent className='space-y-4 pt-0'>
                 <div className='grid gap-4 md:grid-cols-2'>
-                  {scenarios.map((scenario) => (
-                    <button
-                      key={scenario.id}
-                      type='button'
-                      onClick={() => handleSelectScenario(scenario.id)}
-                      className='group flex h-full flex-col items-start justify-between rounded-xl border border-zinc-800 bg-zinc-900/70 p-4 text-left text-sm transition-all hover:-translate-y-0.5 hover:border-cyan-400/80 hover:bg-zinc-900/90 hover:shadow-[0_0_24px_rgba(56,189,248,0.4)] sm:p-5'
-                    >
-                      <div className='inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-cyan-200'>
-                        <span className='flex h-1.5 w-1.5 rounded-full bg-gradient-to-r from-fuchsia-400 to-cyan-400 shadow-[0_0_10px_rgba(244,114,182,0.9)]' />
-                        <span>{scenario.tagline}</span>
-                      </div>
-                      <h2 className='mt-2 text-base font-semibold text-zinc-50 sm:text-lg'>
-                        {scenario.title}
-                      </h2>
-                      <p className='mt-2 text-xs text-zinc-300 sm:text-sm'>
-                        {scenario.description}
-                      </p>
-                      <span className='mt-3 inline-flex items-center gap-1 text-[11px] text-cyan-300'>
-                        <ArrowRight className='h-3 w-3' />
-                        点击进入第 1 幕
-                      </span>
-                    </button>
-                  ))}
+                  {scenarios.map((scenario) => {
+                    const imagesForScenario = scenesImages[scenario.id]
+                    const coverImage =
+                      imagesForScenario && imagesForScenario.length > 0
+                        ? imagesForScenario[0]
+                        : neonCityBanner
+
+                    return (
+                        <button
+                          key={scenario.id}
+                          type='button'
+                          onClick={() => handleSelectScenario(scenario.id)}
+                          onMouseEnter={() => setHoveredScenarioId(scenario.id)}
+                          onFocus={() => setHoveredScenarioId(scenario.id)}
+                          className='group relative flex h-full flex-col items-start justify-between overflow-hidden rounded-2xl border border-zinc-800/80 bg-zinc-900/60 text-left text-sm shadow-lg shadow-black/40 backdrop-blur-xl transition-all hover:-translate-y-1 hover:border-cyan-400/80 hover:bg-zinc-900/80 hover:shadow-cyan-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 sm:p-0'
+                        >
+                          {coverImage && (
+                            <div className='pointer-events-none absolute inset-0 opacity-60'>
+                              <img
+                                src={coverImage}
+                                alt=''
+                                className='h-full w-full object-cover'
+                              />
+                              <div className='absolute inset-0 bg-gradient-to-b from-slate-950/80 via-slate-950/80 to-slate-950' />
+                            </div>
+                          )}
+                          <div className='relative z-10 flex h-full flex-col items-start justify-between p-4 sm:p-5'>
+                          <div className='inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-cyan-200'>
+                            <span className='flex h-1.5 w-1.5 rounded-full bg-gradient-to-r from-fuchsia-400 to-cyan-400 shadow-[0_0_10px_rgba(244,114,182,0.9)]' />
+                            <span>{scenario.tagline}</span>
+                          </div>
+                          <h2 className='mt-2 text-base font-semibold text-zinc-50 sm:text-lg'>
+                            {scenario.title}
+                          </h2>
+                          <p className='mt-2 text-xs text-zinc-300 sm:text-sm'>
+                            {scenario.description}
+                          </p>
+                          <span className='mt-3 inline-flex items-center gap-1 text-[11px] text-cyan-300'>
+                            <ArrowRight className='h-3 w-3' />
+                            点击进入第 1 幕
+                          </span>
+                        </div>
+                      </button>
+                    )
+                  })}
                 </div>
               </CardContent>
             </Card>
@@ -2433,18 +2550,54 @@ function App() {
               {!showResult && currentScene && (
                 <Card className='border-zinc-800/80 bg-white/5 text-zinc-50 shadow-xl shadow-cyan-500/10 backdrop-blur-md'>
                   <CardHeader className='space-y-3 pb-4'>
-                    <p className='text-xs font-medium uppercase tracking-[0.2em] text-cyan-200'>
-                      {activeScenario.title} / Scene {currentScene.id}
-                    </p>
-                    <CardTitle className='text-xl font-semibold text-zinc-50 sm:text-2xl'>
-                      {currentScene.title}
-                    </CardTitle>
+                    <AnimatePresence mode='wait'>
+                      {currentSceneImage && (
+                        <motion.div
+                          key={`${activeScenario?.id ?? 'scene'}-${currentScene.id}`}
+                          initial={
+                            disableMotion
+                              ? { opacity: 0 }
+                              : { opacity: 0, scale: 0.98 }
+                          }
+                          animate={
+                            disableMotion
+                              ? { opacity: 1, scale: 1 }
+                              : { opacity: 1, scale: 1.02 }
+                          }
+                          exit={{ opacity: 0 }}
+                          transition={
+                            disableMotion
+                              ? { duration: 0.4, ease: 'easeOut' }
+                              : { duration: 0.6, ease: 'easeOut' }
+                          }
+                          whileHover={disableMotion ? undefined : { scale: 1.02 }}
+                          className='relative overflow-hidden rounded-xl shadow-lg'
+                        >
+                          <div className='relative aspect-video'>
+                            <img
+                              src={currentSceneImage}
+                              alt={currentSceneImageAlt}
+                              className='h-full w-full object-cover'
+                            />
+                            <div className='pointer-events-none absolute inset-0 bg-gradient-to-b from-slate-950/50 via-slate-950/30 to-transparent' />
+                            <div className='absolute inset-x-0 top-0 p-4'>
+                              <p className='text-[11px] font-medium uppercase tracking-[0.2em] text-cyan-200'>
+                                {activeScenario?.title} · 第 {currentScene.id} 幕
+                              </p>
+                              <CardTitle className='mt-2 text-lg font-semibold text-zinc-50 sm:text-xl'>
+                                {currentScene.title}
+                              </CardTitle>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </CardHeader>
+                  <CardContent className='space-y-4 pt-0'>
                     <CardDescription className='text-sm leading-relaxed text-zinc-300'>
                       {currentScene.narrative}
                     </CardDescription>
-                  </CardHeader>
-                  <CardContent className='space-y-4 pt-0'>
-                    <p className='text-sm text-zinc-200'>{currentScene.prompt}</p>
+                    <p className='text-sm text-cyan-100'>{currentScene.prompt}</p>
 
                     <div className='mt-2 grid gap-3 sm:grid-cols-2'>
                       {currentScene.options.map((option) => {
